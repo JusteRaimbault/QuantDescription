@@ -1,0 +1,120 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=2cm]{geometry}
+\usepackage{algorithm2e}
+
+\title{Implementation of the QUANT model}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+We describe here the implementation of the Quant model (production version, as of 31th January 2017, commit 2f8f3176a24fce24f86c9a33f5356a84caae6751), in \texttt{QUANT3Model.cs} (which is actually the model run by the website as specified in \texttt{modelrunner.aspx} line 113).
+
+
+\subsection*{Model setup}
+
+\subsubsection*{Inputs}
+
+\begin{itemize}
+    \item Travel time matrices $D^{(k)}_{ij}$ for each mode $k$ ($k \in \{0,1,2\}$, which correspond to road, bus, rail), in seconds, between MSOAs. Row index of MSOA can be linked to MSOA code using a lookup table (not done in the main part of the model, everything is handled with integer indices).
+    \item Observed flows from census $T^{(k)}_{ij}$ for each mode $k$ between MSOAs, in number of commuters.
+    \item Origin populations $O_i$, constructed as $O_i = \sum_{j,k} T^{(k)}_{ij}$.
+    \item Destination employments $D_j$, constructed as $D_j = \sum_{i,k} T^{(k)}_{ij}$.
+    \item Constraints: areas where the population can not relocate, given as a boolean by $G_j \in \{0;1\}$ (for the ``with constraints'' case); used in practice as $Z_j = \frac{D_j}{G_j}$ (infinity taken as maximal float value).
+    \item Average travel time for each mode $c_k = \frac{\sum_{i,j} T^{(k)}_{ij} \cdot D^{(k)}_{ij}}{\sum_{i,j} T^{(k)}_{ij}}$ .
+    \item Convergence parameter $\varepsilon_k = 0.001$ (similar for each mode in practice).
+    \item Constraints satisfaction parameter $\varepsilon_C = 0.5$.
+\end{itemize}
+
+\subsubsection*{Outputs}
+
+\begin{itemize}
+    \item Predicted flows $\hat{T}^{(k)}_{ij}$
+    \item Distance decay parameters $\vec{\beta} = \beta_k$
+\end{itemize}
+
+\subsection*{Model Calibration}
+
+
+\subsubsection*{Without constraints}
+
+Algorithm:
+
+\begin{algorithm}[H]
+ Initialize $\beta_k = 1$, $\varepsilon_k = \infty$\;
+ \While{$\varepsilon_k > \epsilon$ for all $k$}{
+  Compute estimated flows 
+  \[
+    \hat{T}^{(k)}_{ij} = O_i \cdot \frac{D_j}{\sum_{j,k} D_j \cdot \exp{\left(- \beta_k D^{(k)}_{ij}\right)}} \cdot \exp{\left( -\beta_k D^{(k)}_{ij} \right)}
+  \] 
+  
+  Compute estimated average travel time 
+  \[\hat{c}_k = \frac{\sum_{i,j} \hat{T}^{(k)}_{ij} \cdot D^{(k)}_{ij}}{\sum_{i,j} \hat{T}^{(k)}_{ij}}\] 
+  
+  Update
+  \[\varepsilon_k = \frac{\left|\hat{c}_k - c_k\right|}{c_k}\]
+  
+  Update $\beta_k = \beta_k + \delta_k$ with step $\delta_k = \beta_k\cdot \varepsilon_k$
+  % i.e. \beta_k = \beta_k \cdot \frac{\hat{c}_k}{c_k} in practice
+  
+ }
+\end{algorithm}
+
+
+\subsubsection*{With constraints}
+
+Note that what are called constraints do not correspond to the usual sense in constrained spatial interaction models (the model is destination-constrained in the classical sense), but to areas where population can not relocate (green belt). The algorithm with constraints adds an internal loop in the descent algorithm to try to satisfy them.
+
+
+
+Algorithm:
+
+\begin{algorithm}[H]
+ Initialize $\beta_k = 1$, $\varepsilon_k = \infty$\;
+ \While{$\varepsilon_k > \epsilon$ for all $k$}{
+ \While{$\max_{B_j = 1} \hat{D}_j - $}{% while constraints not met
+  Compute estimated flows 
+  \[
+    \hat{T}^{(k)}_{ij} = O_i \cdot \frac{D_j \cdot B_j}{\sum_{j,k} D_j \cdot \exp{\left(- \beta_k D^{(k)}_{ij}\right)}} \cdot \exp{\left( -\beta_k D^{(k)}_{ij} \right)}
+  \]
+  
+  
+  }
+  
+  Compute estimated average travel time 
+  \[\hat{c}_k = \frac{\sum_{i,j} \hat{T}^{(k)}_{ij} \cdot D^{(k)}_{ij}}{\sum_{i,j} \hat{T}^{(k)}_{ij}}\] 
+  
+  Update
+  \[\varepsilon_k = \frac{\left|\hat{c}_k - c_k\right|}{c_k}\]
+  
+  Update $\beta_k = \beta_k + \delta_k$ with step $\delta_k = \beta_k\cdot \varepsilon_k$
+  % i.e. \beta_k = \beta_k \cdot \frac{\hat{c}_k}{c_k} in practice
+  
+ }
+\end{algorithm}
+
+
+
+
+\subsubsection*{Model application}
+
+Once the model has been calibrated, it is applied to scenarios:
+
+\begin{enumerate}
+    \item Change $O_i,D_j$ according to scenario
+    \item Compute flows as in model calibration main loop
+\end{enumerate}
+
+$\rightarrow$ as the model is destination-constrained, employments counts will sum up correctly, and new populations are estimated as $\hat{O}_i = \sum_{j,k} \hat{T}^{(k)}_{ij}$
+
+
+\textit{Can not find in the code where the network scenario, i.e. change in distance matrix, is actually run?}
+
+
+
+
+
+\end{document}
